@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     openrouter_embedding_model: str = "text-embedding-3-small"
 
     # Kapruka MCP
-    kapruka_mcp_base_url: str = "https://mcp.kapruka.com"
+    kapruka_mcp_base_url: str = "https://mcp.kapruka.com/mcp"
     kapruka_default_currency: str = "LKR"
     kapruka_cache_ttl_seconds: int = 1800
 
