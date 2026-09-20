@@ -1,4 +1,4 @@
-from mcp.mcp_client import mcp_fetch
+from kapruka_mcp.mcp_client import mcp_fetch
 
 async def check_delivery(city: str, delivery_date: str, product_id: str = None) -> dict:
     params = {"city": city, "delivery_date": delivery_date}

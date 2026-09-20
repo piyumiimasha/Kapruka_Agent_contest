@@ -1,5 +1,5 @@
-from mcp.mcp_client import mcp_fetch, RateLimitError
-from mcp.rate_limiter import consume_create_order
+from kapruka_mcp.mcp_client import mcp_fetch, RateLimitError
+from kapruka_mcp.rate_limiter import consume_create_order
 
 async def create_order(
     cart: list, recipient: dict, delivery: dict,

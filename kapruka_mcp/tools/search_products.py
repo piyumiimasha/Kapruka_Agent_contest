@@ -1,4 +1,4 @@
-from mcp.mcp_client import mcp_fetch
+from kapruka_mcp.mcp_client import mcp_fetch
 
 async def search_products(
     q: str = None, category: str = None, min_price: float = None,

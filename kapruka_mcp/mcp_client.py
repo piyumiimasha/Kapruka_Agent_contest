@@ -1,8 +1,8 @@
 import json
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from kapruka_mcp.client.session import ClientSession
+from kapruka_mcp.client.streamable_http import streamable_http_client
 from config.settings import settings
-from mcp.rate_limiter import consume_request
+from kapruka_mcp.rate_limiter import consume_request
 from utils.logger import get_logger
 
 log = get_logger("McpClient")
@@ -34,7 +34,7 @@ async def mcp_fetch(tool_name: str, params: dict) -> dict:
     log.debug(f"→ {tool_name} | params={params}")
 
     try:
-        async with streamablehttp_client(BASE) as (read, write, _):
+        async with streamable_http_client(BASE) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments=params)
