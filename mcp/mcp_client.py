@@ -1,11 +1,13 @@
-import httpx
+import json
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 from config.settings import settings
 from mcp.rate_limiter import consume_request
 from utils.logger import get_logger
 
 log = get_logger("McpClient")
 
-BASE = settings.kapruka_mcp_base_url
+BASE = settings.kapruka_mcp_base_url  # https://mcp.kapruka.com
 
 
 class RateLimitError(Exception):
@@ -15,12 +17,13 @@ class RateLimitError(Exception):
 
 
 class McpError(Exception):
-    def __init__(self, message: str, status: int):
+    def __init__(self, message: str, status: int = 0):
         super().__init__(message)
         self.status = status
 
 
 async def mcp_fetch(tool_name: str, params: dict) -> dict:
+    # Check global rate limit before every call
     allowed, retry_after_ms = consume_request()
     if not allowed:
         raise RateLimitError(
@@ -28,22 +31,25 @@ async def mcp_fetch(tool_name: str, params: dict) -> dict:
             retry_after_ms,
         )
 
-    url = f"{BASE}/tools/{tool_name}"
     log.debug(f"→ {tool_name} | params={params}")
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(url, json=params)
+    try:
+        async with streamablehttp_client(BASE) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments=params)
 
-    remaining = response.headers.get("RateLimit-Remaining")
-    if remaining is not None:
-        log.debug(f"Kapruka RateLimit-Remaining: {remaining}")
+        log.debug(f"← {tool_name} OK")
 
-    if response.status_code != 200:
-        log.error(f"{tool_name} failed", extra={"status": response.status_code, "body": response.text})
-        raise McpError(
-            f"Kapruka MCP error ({response.status_code}): {response.text}",
-            response.status_code,
-        )
+        # Result content is a list of TextContent blocks
+        if result.content and result.content[0].type == "text":
+            return json.loads(result.content[0].text)
 
-    log.debug(f"← {tool_name} OK")
-    return response.json()
+        # Fallback: return raw result
+        return {"content": [c.model_dump() for c in result.content]}
+
+    except RateLimitError:
+        raise
+    except Exception as e:
+        log.error(f"{tool_name} failed: {e}")
+        raise McpError(str(e))
