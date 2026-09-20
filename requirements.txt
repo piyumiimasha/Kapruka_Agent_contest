@@ -18,6 +18,7 @@ cryptography==42.0.8
 # Config & validation
 pydantic==2.7.4
 pydantic-settings==2.3.4
+python-dotenv==1.0.1
 
 # added (the official MCP Python SDK)
 mcp>=1.9.0    
