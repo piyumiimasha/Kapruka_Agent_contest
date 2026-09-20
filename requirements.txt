@@ -22,3 +22,5 @@ python-dotenv==1.0.1
 
 # added (the official MCP Python SDK)
 mcp>=1.9.0    
+
+langfuse==2.36.1

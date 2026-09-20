@@ -3,10 +3,11 @@ from groq import AsyncGroq
 from config.settings import settings
 from utils.intent_classifier import classify_intent, route_intent, INTENT_MEMORY
 from utils.logger import get_logger
+from utils.tracer import trace
 from memory.memory_injector import build_memory_context
 from memory.semantic_memory import load_user_context, update_preferences, add_recipient, add_interest
 from memory.short_term import add_turn, get_history
-from prompts.orchestator_prompt import build_orchestrator_prompt
+from prompts.orchestrator_prompt import build_orchestrator_prompt
 from agents.discovery_agent import run_discovery_agent
 from agents.delivery_agent import run_delivery_agent
 from agents.order_agent import run_order_agent
@@ -15,7 +16,12 @@ log = get_logger("Orchestrator")
 groq = AsyncGroq(api_key=settings.groq_api_key)
 
 
-async def _classify_with_llm(message: str) -> str:
+async def _classify_with_llm(message: str, span) -> str:
+    generation = span.generation(
+        name="intent-classification",
+        model=settings.groq_agent_model,
+        input=message,
+    )
     response = await groq.chat.completions.create(
         model=settings.groq_agent_model,
         max_tokens=10,
@@ -28,7 +34,9 @@ async def _classify_with_llm(message: str) -> str:
             {"role": "user", "content": message},
         ],
     )
-    return response.choices[0].message.content.strip().lower()
+    result = response.choices[0].message.content.strip().lower()
+    generation.end(output=result)
+    return result
 
 
 async def _extract_and_save_preferences(user_id: str, message: str):
@@ -43,51 +51,86 @@ async def _extract_and_save_preferences(user_id: str, message: str):
 async def run_orchestrator(session_id: str, user_message: str) -> dict:
     log.info(f"Orchestrator received message session={session_id}")
 
-    # 1. Load user context
-    user, profile = await load_user_context(session_id)
-    user_id = str(user["id"])
+    # ── Start Langfuse trace (one per user message) ──
+    lf_trace = trace(
+        name="orchestrator",
+        session_id=session_id,
+        metadata={"message_preview": user_message[:100]},
+    )
 
-    # 2. Build memory context
-    memory_context = await build_memory_context(session_id, user_id, profile, user_message)
+    try:
+        # 1. Load user context
+        user, profile = await load_user_context(session_id)
+        user_id = str(user["id"])
+        lf_trace.update(user_id=user_id)
 
-    # 3. Short-term history
-    history = get_history(session_id)
+        # 2. Build memory context
+        memory_span = lf_trace.span(name="build-memory-context")
+        memory_context = await build_memory_context(session_id, user_id, profile, user_message)
+        memory_span.end()
 
-    # 4. Classify intent
-    intent, confident = classify_intent(user_message)
-    if not confident:
-        intent = await _classify_with_llm(user_message)
-    log.info(f"Intent: {intent}")
+        # 3. Short-term history
+        history = get_history(session_id)
 
-    # 5. Passive preference extraction
-    if intent == INTENT_MEMORY:
-        await _extract_and_save_preferences(user_id, user_message)
+        # 4. Classify intent
+        intent_span = lf_trace.span(name="classify-intent")
+        intent, confident = classify_intent(user_message)
+        if not confident:
+            intent = await _classify_with_llm(user_message, lf_trace)
+        intent_span.end(metadata={"intent": intent, "confident": confident})
+        log.info(f"Intent: {intent}")
 
-    # 6. Route to sub-agent
-    target = route_intent(intent)
+        # 5. Passive preference extraction
+        if intent == INTENT_MEMORY:
+            await _extract_and_save_preferences(user_id, user_message)
 
-    if target == "discovery":
-        reply = await run_discovery_agent(user_message, history, memory_context)
-    elif target == "delivery":
-        reply = await run_delivery_agent(user_message, history, memory_context)
-    elif target == "order":
-        reply = await run_order_agent(user_message, history, memory_context, session_id, user_id)
-    else:
-        # Chitchat / memory / unknown — handle directly
-        response = await groq.chat.completions.create(
-            model=settings.groq_orchestrator_model,
-            max_tokens=settings.groq_max_tokens,
-            messages=[
-                {"role": "system", "content": build_orchestrator_prompt(memory_context)},
-                *history,
-                {"role": "user", "content": user_message},
-            ],
+        # 6. Route to sub-agent
+        target = route_intent(intent)
+        agent_span = lf_trace.span(
+            name=f"agent-{target}",
+            metadata={"agent": target, "intent": intent},
         )
-        reply = response.choices[0].message.content
 
-    # 7. Persist turns
-    add_turn(session_id, "user", user_message)
-    add_turn(session_id, "assistant", reply, agent=target)
+        if target == "discovery":
+            reply = await run_discovery_agent(user_message, history, memory_context, lf_trace)
+        elif target == "delivery":
+            reply = await run_delivery_agent(user_message, history, memory_context, lf_trace)
+        elif target == "order":
+            reply = await run_order_agent(user_message, history, memory_context, session_id, user_id, lf_trace)
+        else:
+            gen = lf_trace.generation(
+                name="orchestrator-direct",
+                model=settings.groq_orchestrator_model,
+                input=[*history, {"role": "user", "content": user_message}],
+            )
+            response = await groq.chat.completions.create(
+                model=settings.groq_orchestrator_model,
+                max_tokens=settings.groq_max_tokens,
+                messages=[
+                    {"role": "system", "content": build_orchestrator_prompt(memory_context)},
+                    *history,
+                    {"role": "user", "content": user_message},
+                ],
+            )
+            reply = response.choices[0].message.content
+            gen.end(
+                output=reply,
+                usage={
+                    "input": response.usage.prompt_tokens,
+                    "output": response.usage.completion_tokens,
+                },
+            )
 
-    log.info(f"Reply ready | agent={target}")
-    return {"reply": reply, "agent": target}
+        agent_span.end()
+
+        # 7. Persist turns
+        add_turn(session_id, "user", user_message)
+        add_turn(session_id, "assistant", reply, agent=target)
+
+        lf_trace.update(output=reply, metadata={"agent": target})
+        log.info(f"Reply ready | agent={target}")
+        return {"reply": reply, "agent": target}
+
+    except Exception as e:
+        lf_trace.update(metadata={"error": str(e)})
+        raise

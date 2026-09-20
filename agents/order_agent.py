@@ -14,23 +14,14 @@ groq = AsyncGroq(api_key=settings.groq_api_key)
 TOOLS = [
     {"type": "function", "function": {
         "name": "kapruka_create_order",
-        "description": "Create a guest checkout order and return a 60-minute click-to-pay URL. Only call after explicit user confirmation.",
+        "description": "Create a guest checkout order. Only call after explicit user confirmation.",
         "parameters": {"type": "object", "required": ["cart", "recipient", "delivery", "sender"], "properties": {
-            "cart": {"type": "array", "items": {"type": "object", "required": ["product_id", "quantity"], "properties": {
-                "product_id": {"type": "string"},
-                "quantity":   {"type": "number"},
-                "variant_id": {"type": "string"},
-            }}},
-            "recipient": {"type": "object", "required": ["name", "phone", "address", "city"], "properties": {
-                "name": {"type": "string"}, "phone": {"type": "string"},
-                "address": {"type": "string"}, "city": {"type": "string"},
-            }},
-            "delivery":      {"type": "object", "required": ["date"], "properties": {"date": {"type": "string"}}},
-            "sender":        {"type": "object", "required": ["name", "phone"], "properties": {
-                "name": {"type": "string"}, "phone": {"type": "string"},
-            }},
-            "gift_message":  {"type": "string"},
-            "currency":      {"type": "string"},
+            "cart": {"type": "array", "items": {"type": "object"}},
+            "recipient": {"type": "object"},
+            "delivery":  {"type": "object"},
+            "sender":    {"type": "object"},
+            "gift_message": {"type": "string"},
+            "currency":     {"type": "string"},
         }},
     }},
     {"type": "function", "function": {
@@ -49,6 +40,7 @@ async def run_order_agent(
     memory_context: str,
     session_id: str,
     user_id: str,
+    lf_trace=None,
 ) -> str:
     log.info(f"Order agent invoked: {user_message[:60]}")
     system = build_order_prompt(memory_context)
@@ -63,22 +55,44 @@ async def run_order_agent(
         {"role": "user", "content": f"{user_message}\n\n[Current cart: {json.dumps(cart_payload)}]"},
     ]
 
-    response = await groq.chat.completions.create(
-        model=settings.groq_orchestrator_model,
-        max_tokens=settings.groq_max_tokens,
-        messages=[{"role": "system", "content": system}, *messages],
-        tools=TOOLS,
-        tool_choice="auto",
-    )
-
     order_args = None
+    loop_count = 0
 
-    while response.choices[0].finish_reason == "tool_calls":
+    while True:
+        loop_count += 1
+        gen = lf_trace.generation(
+            name=f"order-llm-{loop_count}",
+            model=settings.groq_orchestrator_model,
+            input=messages,
+        ) if lf_trace else None
+
+        response = await groq.chat.completions.create(
+            model=settings.groq_orchestrator_model,
+            max_tokens=settings.groq_max_tokens,
+            messages=[{"role": "system", "content": system}, *messages],
+            tools=TOOLS,
+            tool_choice="auto",
+        )
+
+        if gen:
+            gen.end(
+                output=response.choices[0].message.content or "[tool_call]",
+                usage={"input": response.usage.prompt_tokens, "output": response.usage.completion_tokens},
+            )
+
+        if response.choices[0].finish_reason != "tool_calls":
+            break
+
         assistant_msg = response.choices[0].message
         tool_results = []
         for call in assistant_msg.tool_calls:
             args = json.loads(call.function.arguments)
             log.debug(f"Tool call: {call.function.name}")
+
+            tool_span = lf_trace.span(
+                name=f"tool-{call.function.name}",
+                metadata={"args": args},
+            ) if lf_trace else None
 
             if call.function.name == "kapruka_create_order":
                 result = await create_order(**args)
@@ -88,20 +102,17 @@ async def run_order_agent(
             else:
                 raise ValueError(f"Unknown tool: {call.function.name}")
 
+            if tool_span:
+                tool_span.end(metadata={"success": True})
+
             tool_results.append({
                 "role": "tool",
                 "tool_call_id": call.id,
                 "content": json.dumps(result),
             })
+
         messages.append(assistant_msg.model_dump())
         messages.extend(tool_results)
-        response = await groq.chat.completions.create(
-            model=settings.groq_orchestrator_model,
-            max_tokens=settings.groq_max_tokens,
-            messages=[{"role": "system", "content": system}, *messages],
-            tools=TOOLS,
-            tool_choice="auto",
-        )
 
     # Save episode after successful order
     if order_args and user_id:
