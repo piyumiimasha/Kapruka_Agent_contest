@@ -10,4 +10,4 @@ async def search_products(
         "max_price": max_price, "in_stock_only": in_stock_only,
         "sort": sort, "limit": limit, "cursor": cursor, "currency": currency,
     }.items() if v is not None}
-    return await mcp_fetch("kapruka_search_products", params)
+    return await mcp_fetch("kapruka_search_products", {"params": params})

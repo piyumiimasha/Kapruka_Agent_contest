@@ -16,4 +16,4 @@ async def create_order(
         params["gift_message"] = gift_message
     if currency:
         params["currency"] = currency
-    return await mcp_fetch("kapruka_create_order", params)
+    return await mcp_fetch("kapruka_create_order", {"params": params})
