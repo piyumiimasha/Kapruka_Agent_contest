@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     max_episodic_inject_count: int = 5
     max_semantic_profile_tokens: int = 300
 
+    # Langfuse
+    langfuse_public_key: str = "pk-lf-936d32c2-919d-4135-bd2d-32c83e7b597a"
+    langfuse_secret_key: str = "sk-lf-481f22fa-d5a9-4fcc-9144-6593362c26e9"
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     @property
     def is_dev(self) -> bool:
         return self.env == "development"
