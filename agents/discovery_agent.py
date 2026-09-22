@@ -1,7 +1,7 @@
 import json
 from groq import AsyncGroq
 from config.settings import settings
-from prompts.discovery_prompt import build_discovery_prompt
+from prompts.discovery_prompts import build_discovery_prompt
 from kapruka_mcp.tools.search_products import search_products
 from kapruka_mcp.tools.get_product import get_product
 from kapruka_mcp.tools.list_categories import list_categories

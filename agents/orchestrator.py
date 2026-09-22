@@ -7,7 +7,7 @@ from utils.tracer import trace
 from memory.memory_injector import build_memory_context
 from memory.semantic_memory import load_user_context, update_preferences, add_recipient, add_interest
 from memory.short_term import add_turn, get_history
-from prompts.orchestrator_prompt import build_orchestrator_prompt
+from prompts.orchestator_prompt import build_orchestrator_prompt
 from agents.discovery_agent import run_discovery_agent
 from agents.delivery_agent import run_delivery_agent
 from agents.order_agent import run_order_agent

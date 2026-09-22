@@ -1,7 +1,7 @@
 import json
 from groq import AsyncGroq
 from config.settings import settings
-from prompts.delivery_prompt import build_delivery_prompt
+from prompts.delivery_prompts import build_delivery_prompt
 from kapruka_mcp.tools.list_delivery_cities import list_delivery_cities
 from kapruka_mcp.tools.check_delivery import check_delivery
 from utils.logger import get_logger
