@@ -1,3 +1,4 @@
+import base64
 import os
 from config.settings import settings
 from utils.logger import get_logger
@@ -26,8 +27,10 @@ def _init():
     exporter = OTLPSpanExporter(
         endpoint=f"{settings.langfuse_host}/api/public/otel/v1/traces",
         headers={
-            "Authorization": f"Bearer {settings.langfuse_public_key}:{settings.langfuse_secret_key}"
-        },
+        "Authorization": "Basic " + base64.b64encode(
+            f"{settings.langfuse_public_key}:{settings.langfuse_secret_key}".encode()
+        ).decode()
+    },
     )
 
     provider = TracerProvider()
