@@ -27,13 +27,14 @@ def get_or_create_session(request: Request, response: Response) -> str:
         try:
             payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
             session_id = payload["session_id"]
-            log.debug(f"Authenticated session: {session_id}")
+            log.debug(f"Authenticated: {session_id}")
             return session_id
         except JWTError:
-            log.warning("Invalid token — issuing new session")
+            log.warning("Invalid token — issuing anonymous session")
 
+    # Anonymous fallback
     session_id = str(uuid4())
     new_token = create_token(session_id)
     response.headers["X-Session-Token"] = new_token
-    log.info(f"New session created: {session_id}")
+    log.info(f"Anonymous session: {session_id}")
     return session_id
