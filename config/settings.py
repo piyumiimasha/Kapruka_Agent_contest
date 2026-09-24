@@ -6,8 +6,8 @@ class Settings(BaseSettings):
 
     # Groq
     groq_api_key: str
-    groq_orchestrator_model: str = "llama-3.3-70b-versatile"
-    groq_agent_model: str = "llama-3.1-8b-instant"
+    groq_orchestrator_model: str = "openai/gpt-oss-120b"
+    groq_agent_model: str = "openai/gpt-oss-20b"
     groq_max_tokens: int = 1024
 
     # OpenRouter
