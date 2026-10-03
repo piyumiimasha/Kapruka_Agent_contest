@@ -1,5 +1,4 @@
 import json
-from typing import Optional
 from db.database import get_pool
 from db.schema import DEFAULT_PROFILE
 from utils.logger import get_logger
@@ -7,39 +6,51 @@ from utils.logger import get_logger
 log = get_logger("UserRepository")
 
 
-# ── Users ──────────────────────────────────────────────────────────────────
-
-async def find_or_create_user(session_id: str) -> dict:
+async def find_or_create_user(auth_user_id: str) -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM users WHERE session_id = $1", session_id
+            "SELECT * FROM users WHERE session_id = $1", auth_user_id
         )
         if row:
             return dict(row)
         row = await conn.fetchrow(
-            "INSERT INTO users (session_id) VALUES ($1) RETURNING *", session_id
+            "INSERT INTO users (session_id) VALUES ($1) RETURNING *",
+            auth_user_id,
         )
-        log.info(f"New user created: {session_id}")
+        log.info(f"Created user record for: {auth_user_id}")
         return dict(row)
 
-
-# ── Semantic profile ────────────────────────────────────────────────────────
 
 async def get_profile(user_id: str) -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT profile FROM user_profiles WHERE user_id = $1", user_id
+            """
+            SELECT up.profile FROM users u
+            JOIN user_profiles up ON up.user_id = u.id
+            WHERE u.session_id = $1
+            """,
+            user_id,
         )
         if row:
-            return json.loads(row["profile"]) if isinstance(row["profile"], str) else dict(row["profile"])
+            p = row["profile"]
+            return json.loads(p) if isinstance(p, str) else dict(p)
         return dict(DEFAULT_PROFILE)
 
 
 async def upsert_profile(user_id: str, updates: dict) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO users (session_id) VALUES ($1) ON CONFLICT (session_id) DO NOTHING",
+            user_id,
+        )
+        user_row = await conn.fetchrow(
+            "SELECT id FROM users WHERE session_id = $1", user_id
+        )
+        if not user_row:
+            return
         await conn.execute(
             """
             INSERT INTO user_profiles (user_id, profile)
@@ -49,7 +60,7 @@ async def upsert_profile(user_id: str, updates: dict) -> None:
                 profile    = user_profiles.profile || $2::jsonb,
                 updated_at = NOW()
             """,
-            user_id,
+            user_row["id"],
             json.dumps(updates),
         )
     log.debug(f"Profile updated for {user_id}: {updates}")
@@ -58,6 +69,11 @@ async def upsert_profile(user_id: str, updates: dict) -> None:
 async def append_to_profile_array(user_id: str, field: str, value: str) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT id FROM users WHERE session_id = $1", user_id
+        )
+        if not user_row:
+            return
         await conn.execute(
             f"""
             UPDATE user_profiles
@@ -70,15 +86,15 @@ async def append_to_profile_array(user_id: str, field: str, value: str) -> None:
             WHERE user_id = $2
             """,
             json.dumps(value),
-            user_id,
+            user_row["id"],
         )
     log.debug(f"Appended to profile.{field} for {user_id}")
 
 
-# ── Prompt formatting ───────────────────────────────────────────────────────
-
 def format_profile_for_prompt(profile: dict) -> str:
     lines = []
+    if profile.get("name"):
+        lines.append(f"- User's name: {profile['name']}")
     if profile.get("preferred_city"):
         lines.append(f"- Preferred delivery city: {profile['preferred_city']}")
     if profile.get("currency"):
@@ -93,5 +109,4 @@ def format_profile_for_prompt(profile: dict) -> str:
         lines.append(f"- Dislikes / avoid: {', '.join(profile['dislikes'])}")
     if profile.get("interests"):
         lines.append(f"- Interests: {', '.join(profile['interests'])}")
-
     return "User profile:\n" + "\n".join(lines) if lines else "No profile data available yet."

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 import hashlib, secrets
 from db.database import get_pool
 from db.user_repository import find_or_create_user, upsert_profile
@@ -12,12 +12,12 @@ router = APIRouter()
 
 class RegisterRequest(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     password: str
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 
@@ -52,16 +52,22 @@ async def register(body: RegisterRequest):
             body.email, body.name, hashed,
         )
 
-    user_id = str(row["id"])
-    # Create user record in main users table keyed by their auth ID
-    await find_or_create_user(user_id)
-    await upsert_profile(user_id, {"name": body.name, "email": body.email})
+    # auth_user_id becomes the stable user identity across all sessions
+    auth_user_id = str(row["id"])
 
-    token = create_token(user_id)
-    log.info(f"Registered: {body.email}")
+    # Create user + profile records linked to this stable ID
+    await find_or_create_user(auth_user_id)
+    await upsert_profile(auth_user_id, {
+        "name":     body.name,
+        "email":    body.email,
+        "currency": "LKR",
+    })
+
+    token = create_token(auth_user_id)
+    log.info(f"Registered: {body.email} → {auth_user_id}")
     return {
         "token": token,
-        "user": {"id": user_id, "email": body.email, "name": body.name},
+        "user":  {"id": auth_user_id, "email": body.email, "name": body.name},
     }
 
 
@@ -77,12 +83,14 @@ async def login(body: LoginRequest):
     if not row or not verify_password(body.password, row["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
 
-    user_id = str(row["id"])
-    await find_or_create_user(user_id)
+    auth_user_id = str(row["id"])
 
-    token = create_token(user_id)
-    log.info(f"Logged in: {body.email}")
+    # Ensure user record exists (handles users created before this fix)
+    await find_or_create_user(auth_user_id)
+
+    token = create_token(auth_user_id)
+    log.info(f"Logged in: {body.email} → {auth_user_id}")
     return {
         "token": token,
-        "user": {"id": user_id, "email": row["email"], "name": row["name"]},
+        "user":  {"id": auth_user_id, "email": row["email"], "name": row["name"]},
     }
