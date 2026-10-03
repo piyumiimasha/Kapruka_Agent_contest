@@ -2,6 +2,7 @@ import json
 from groq import AsyncGroq
 from config.settings import settings
 from prompts.order_prompt import build_order_prompt
+from prompts.episode_summary_prompt import build_episode_summary_prompt
 from kapruka_mcp.tools.create_order import create_order
 from kapruka_mcp.tools.track_order import track_order
 from memory.episodic_memory import record_episode
@@ -16,10 +17,10 @@ TOOLS = [
         "name": "kapruka_create_order",
         "description": "Create a guest checkout order. Only call after explicit user confirmation.",
         "parameters": {"type": "object", "required": ["cart", "recipient", "delivery", "sender"], "properties": {
-            "cart": {"type": "array", "items": {"type": "object"}},
-            "recipient": {"type": "object"},
-            "delivery":  {"type": "object"},
-            "sender":    {"type": "object"},
+            "cart":         {"type": "array",  "items": {"type": "object"}},
+            "recipient":    {"type": "object"},
+            "delivery":     {"type": "object"},
+            "sender":       {"type": "object"},
             "gift_message": {"type": "string"},
             "currency":     {"type": "string"},
         }},
@@ -32,6 +33,33 @@ TOOLS = [
         }},
     }},
 ]
+
+
+async def _summarize_order(order_args: dict, conversation_history: list[dict]) -> str:
+    """Use LLM to write a rich natural-language summary of the completed order."""
+    try:
+        response = await groq.chat.completions.create(
+            model=settings.groq_agent_model,
+            max_tokens=150,
+            messages=[
+                {
+                    "role": "user",
+                    "content": build_episode_summary_prompt(order_args, conversation_history),
+                }
+            ],
+        )
+        summary = response.choices[0].message.content.strip()
+        log.info(f"Order summary generated: {summary[:80]}...")
+        return summary
+    except Exception as e:
+        log.warning(f"LLM summarization failed, using fallback: {e}")
+        # Fallback to basic f-string if LLM fails
+        return (
+            f"Ordered {len(order_args['cart'])} item(s) for "
+            f"{order_args['recipient']['name']} in "
+            f"{order_args['recipient']['city']} on "
+            f"{order_args['delivery']['date']}."
+        )
 
 
 async def run_order_agent(
@@ -77,7 +105,10 @@ async def run_order_agent(
         if gen:
             gen.end(
                 output=response.choices[0].message.content or "[tool_call]",
-                usage={"input": response.usage.prompt_tokens, "output": response.usage.completion_tokens},
+                usage={
+                    "input":  response.usage.prompt_tokens,
+                    "output": response.usage.completion_tokens,
+                },
             )
 
         if response.choices[0].finish_reason != "tool_calls":
@@ -85,6 +116,7 @@ async def run_order_agent(
 
         assistant_msg = response.choices[0].message
         tool_results = []
+
         for call in assistant_msg.tool_calls:
             args = json.loads(call.function.arguments)
             log.debug(f"Tool call: {call.function.name}")
@@ -106,27 +138,34 @@ async def run_order_agent(
                 tool_span.end(metadata={"success": True})
 
             tool_results.append({
-                "role": "tool",
+                "role":         "tool",
                 "tool_call_id": call.id,
-                "content": json.dumps(result),
+                "content":      json.dumps(result),
             })
 
         messages.append(assistant_msg.model_dump())
         messages.extend(tool_results)
 
+    reply = response.choices[0].message.content
+
     # Save episode after successful order
     if order_args and user_id:
-        summary = (
-            f"Ordered {len(order_args['cart'])} item(s) for "
-            f"{order_args['recipient']['name']} in "
-            f"{order_args['recipient']['city']} on {order_args['delivery']['date']}."
+        # Use LLM to generate a rich summary
+        summary = await _summarize_order(order_args, conversation_history)
+
+        await record_episode(
+            user_id,
+            summary,
+            metadata={
+                "city":         order_args["recipient"]["city"],
+                "date":         order_args["delivery"]["date"],
+                "recipient":    order_args["recipient"]["name"],
+                "item_count":   len(order_args["cart"]),
+                "gift_message": order_args.get("gift_message", ""),
+                "currency":     order_args.get("currency", "LKR"),
+                "outcome":      "order_placed",
+            },
         )
-        await record_episode(user_id, summary, {
-            "city":      order_args["recipient"]["city"],
-            "date":      order_args["delivery"]["date"],
-            "recipient": order_args["recipient"]["name"],
-            "outcome":   "order_placed",
-        })
 
     log.info("Order agent done")
-    return response.choices[0].message.content
+    return reply
