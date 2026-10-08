@@ -1,5 +1,5 @@
 from db.user_repository import (
-    find_or_create_user,
+    get_auth_user,
     get_profile,
     upsert_profile,
     append_to_profile_array,
@@ -10,10 +10,27 @@ from utils.logger import get_logger
 log = get_logger("SemanticMemory")
 
 
-async def load_user_context(session_id: str) -> tuple[dict, dict]:
-    user = await find_or_create_user(session_id)
-    profile = await get_profile(str(user["id"]))
-    log.debug(f"Loaded context for user {user['id']}")
+async def load_user_context(user_id: str) -> tuple[dict, dict]:
+    """
+    Load the authenticated user's context.
+
+    user_id is the ID from auth_users.id.
+    There is no users table anymore.
+    """
+
+    user = await get_auth_user(user_id)
+
+    if not user:
+        raise ValueError(
+            f"Authenticated user not found: {user_id}"
+        )
+
+    profile = await get_profile(user_id)
+
+    log.debug(
+        f"Loaded context for user {user_id}"
+    )
+
     return user, profile
 
 
@@ -22,15 +39,27 @@ async def update_preferences(user_id: str, updates: dict):
 
 
 async def add_recipient(user_id: str, name: str):
-    await append_to_profile_array(user_id, "past_recipients", name)
+    await append_to_profile_array(
+        user_id,
+        "past_recipients",
+        name,
+    )
 
 
 async def add_interest(user_id: str, interest: str):
-    await append_to_profile_array(user_id, "interests", interest)
+    await append_to_profile_array(
+        user_id,
+        "interests",
+        interest,
+    )
 
 
 async def add_dislike(user_id: str, dislike: str):
-    await append_to_profile_array(user_id, "dislikes", dislike)
+    await append_to_profile_array(
+        user_id,
+        "dislikes",
+        dislike,
+    )
 
 
 __all__ = [

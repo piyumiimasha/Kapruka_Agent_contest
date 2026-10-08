@@ -111,8 +111,8 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
 
     try:
         # 1. Load user context (semantic memory)
-        user, profile = await load_user_context(session_id)
-        user_id = str(user["id"])
+        user_id = str(session_id)
+        user, profile = await load_user_context(user_id)
         lf_trace.update(user_id=user_id)
 
         # 2. Build memory context
@@ -132,7 +132,10 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
         )
 
         if not history:
-            history = await load_history_from_db(session_id)
+            history = await load_history_from_db(
+                session_id,
+                user_id,
+            )
 
             log.info(
                 f"========== HISTORY FROM DB ==========\n"

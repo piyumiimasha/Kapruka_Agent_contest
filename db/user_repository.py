@@ -1,112 +1,183 @@
 import json
+
 from db.database import get_pool
-from db.schema import DEFAULT_PROFILE
-from utils.logger import get_logger
-
-log = get_logger("UserRepository")
 
 
-async def find_or_create_user(auth_user_id: str) -> dict:
+async def get_auth_user(user_id: str):
+    """
+    Get the authenticated user directly from auth_users.
+
+    user_id must be auth_users.id.
+    """
+
     pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM users WHERE session_id = $1", auth_user_id
-        )
-        if row:
-            return dict(row)
-        row = await conn.fetchrow(
-            "INSERT INTO users (session_id) VALUES ($1) RETURNING *",
-            auth_user_id,
-        )
-        log.info(f"Created user record for: {auth_user_id}")
-        return dict(row)
 
-
-async def get_profile(user_id: str) -> dict:
-    pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT up.profile FROM users u
-            JOIN user_profiles up ON up.user_id = u.id
-            WHERE u.session_id = $1
+            SELECT id, email, name, created_at
+            FROM auth_users
+            WHERE id = $1
             """,
             user_id,
         )
-        if row:
-            p = row["profile"]
-            return json.loads(p) if isinstance(p, str) else dict(p)
-        return dict(DEFAULT_PROFILE)
+
+    return dict(row) if row else None
 
 
-async def upsert_profile(user_id: str, updates: dict) -> None:
+async def get_profile(user_id: str):
+    """
+    Get the profile directly using auth_users.id.
+    """
+
     pool = await get_pool()
+
     async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO users (session_id) VALUES ($1) ON CONFLICT (session_id) DO NOTHING",
+        row = await conn.fetchrow(
+            """
+            SELECT profile
+            FROM user_profiles
+            WHERE user_id = $1
+            """,
             user_id,
         )
-        user_row = await conn.fetchrow(
-            "SELECT id FROM users WHERE session_id = $1", user_id
-        )
-        if not user_row:
-            return
+
+    if not row:
+        return {}
+
+    return row["profile"] or {}
+
+
+async def upsert_profile(user_id: str, updates: dict):
+    """
+    Create or update the user's profile.
+
+    user_id is auth_users.id.
+    """
+
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO user_profiles (user_id, profile)
-            VALUES ($1, $2::jsonb)
+            INSERT INTO user_profiles (
+                user_id,
+                profile
+            )
+            VALUES (
+                $1,
+                $2::jsonb
+            )
             ON CONFLICT (user_id)
             DO UPDATE SET
-                profile    = user_profiles.profile || $2::jsonb,
+                profile =
+                    user_profiles.profile ||
+                    EXCLUDED.profile,
                 updated_at = NOW()
             """,
-            user_row["id"],
+            user_id,
             json.dumps(updates),
         )
-    log.debug(f"Profile updated for {user_id}: {updates}")
 
 
-async def append_to_profile_array(user_id: str, field: str, value: str) -> None:
+async def ensure_profile(user_id: str):
+    """
+    Make sure a profile row exists for the authenticated user.
+    """
+
     pool = await get_pool()
+
     async with pool.acquire() as conn:
-        user_row = await conn.fetchrow(
-            "SELECT id FROM users WHERE session_id = $1", user_id
-        )
-        if not user_row:
-            return
         await conn.execute(
-            f"""
-            UPDATE user_profiles
-            SET profile = jsonb_set(
-                profile,
-                '{{{field}}}',
-                (COALESCE(profile->'{field}', '[]'::jsonb) || $1::jsonb)
-            ),
-            updated_at = NOW()
-            WHERE user_id = $2
+            """
+            INSERT INTO user_profiles (
+                user_id,
+                profile
+            )
+            VALUES ($1, '{}'::jsonb)
+            ON CONFLICT (user_id)
+            DO NOTHING
             """,
-            json.dumps(value),
-            user_row["id"],
+            user_id,
         )
-    log.debug(f"Appended to profile.{field} for {user_id}")
+
+
+async def append_to_profile_array(
+    user_id: str,
+    field: str,
+    value: str,
+):
+    """
+    Append a value to an array field in the user's JSONB profile.
+
+    user_id is auth_users.id.
+    """
+
+    allowed_fields = {
+        "past_recipients",
+        "interests",
+        "dislikes",
+    }
+
+    if field not in allowed_fields:
+        raise ValueError(f"Invalid profile array field: {field}")
+
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO user_profiles (
+                user_id,
+                profile
+            )
+            VALUES (
+                $1,
+                jsonb_build_object(
+                    $2,
+                    jsonb_build_array($3)
+                )
+            )
+            ON CONFLICT (user_id)
+            DO UPDATE SET
+                profile =
+                    jsonb_set(
+                        user_profiles.profile,
+                        ARRAY[$2],
+                        COALESCE(
+                            user_profiles.profile->$2,
+                            '[]'::jsonb
+                        ) || jsonb_build_array($3)
+                    ),
+                updated_at = NOW()
+            """,
+            user_id,
+            field,
+            value,
+        )
 
 
 def format_profile_for_prompt(profile: dict) -> str:
+    """
+    Convert the stored profile into prompt-friendly text.
+    """
+
+    if not profile:
+        return "No saved user preferences."
+
     lines = []
-    if profile.get("name"):
-        lines.append(f"- User's name: {profile['name']}")
-    if profile.get("preferred_city"):
-        lines.append(f"- Preferred delivery city: {profile['preferred_city']}")
-    if profile.get("currency"):
-        lines.append(f"- Preferred currency: {profile['currency']}")
-    bmin, bmax = profile.get("budget_min"), profile.get("budget_max")
-    if bmin is not None or bmax is not None:
-        currency = profile.get("currency", "LKR")
-        lines.append(f"- Typical budget: {bmin or 'any'} – {bmax or 'any'} {currency}")
-    if profile.get("past_recipients"):
-        lines.append(f"- Known recipients: {', '.join(profile['past_recipients'])}")
-    if profile.get("dislikes"):
-        lines.append(f"- Dislikes / avoid: {', '.join(profile['dislikes'])}")
-    if profile.get("interests"):
-        lines.append(f"- Interests: {', '.join(profile['interests'])}")
-    return "User profile:\n" + "\n".join(lines) if lines else "No profile data available yet."
+
+    for key, value in profile.items():
+        if value in (None, "", [], {}):
+            continue
+
+        if isinstance(value, list):
+            value = ", ".join(str(item) for item in value)
+
+        readable_key = key.replace("_", " ").title()
+        lines.append(f"- {readable_key}: {value}")
+
+    if not lines:
+        return "No saved user preferences."
+
+    return "User profile:\n" + "\n".join(lines)

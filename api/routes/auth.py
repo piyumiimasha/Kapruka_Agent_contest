@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import hashlib, secrets
 from db.database import get_pool
-from db.user_repository import find_or_create_user, upsert_profile
+from db.user_repository import upsert_profile
 from api.middleware.auth import create_token
 from utils.logger import get_logger
 
@@ -56,7 +56,7 @@ async def register(body: RegisterRequest):
     auth_user_id = str(row["id"])
 
     # Create user + profile records linked to this stable ID
-    await find_or_create_user(auth_user_id)
+    
     await upsert_profile(auth_user_id, {
         "name":     body.name,
         "email":    body.email,
@@ -85,8 +85,7 @@ async def login(body: LoginRequest):
 
     auth_user_id = str(row["id"])
 
-    # Ensure user record exists (handles users created before this fix)
-    await find_or_create_user(auth_user_id)
+      
 
     token = create_token(auth_user_id)
     log.info(f"Logged in: {body.email} → {auth_user_id}")
