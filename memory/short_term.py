@@ -17,6 +17,15 @@ def add_turn(session_id: str, role: str, content: str, agent: str = None):
 
 async def add_turn_and_persist(session_id: str, user_id: str, role: str, content: str, agent: str = None):
     """Add to in-memory store AND persist to conversation_logs in Supabase."""
+    
+    log.info(
+    f"ADDING TURN | "
+    f"session={session_id} | "
+    f"user_id={user_id} | "
+    f"role={role} | "
+    f"content={content[:100]}"
+    )
+
     add_turn(session_id, role, content, agent)
     try:
         from db.database import get_pool

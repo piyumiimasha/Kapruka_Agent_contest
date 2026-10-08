@@ -122,12 +122,37 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
 
         # 3. Get history — load from DB if in-memory is empty (new server start)
         history = get_history(session_id)
+
+        log.info(
+            f"========== HISTORY BEFORE DB ==========\n"
+            f"session_id: {session_id}\n"
+            f"turn_count: {len(history)}\n"
+            f"history: {history}\n"
+            f"======================================="
+        )
+
         if not history:
             history = await load_history_from_db(session_id)
+
+            log.info(
+                f"========== HISTORY FROM DB ==========\n"
+                f"session_id: {session_id}\n"
+                f"turn_count: {len(history)}\n"
+                f"history: {history}\n"
+                f"====================================="
+            )
+
             # Repopulate in-memory store
             for turn in history:
                 add_turn(session_id, turn["role"], turn["content"])
-            log.debug(f"Loaded {len(history)} turns from DB for {session_id}")
+
+        log.info(
+            f"========== HISTORY SENT TO AGENT ==========\n"
+            f"session_id: {session_id}\n"
+            f"turn_count: {len(history)}\n"
+            f"history: {history}\n"
+            f"=========================================="
+        )
 
         # 4. Classify intent
         intent_span = lf_trace.span(name="classify-intent")

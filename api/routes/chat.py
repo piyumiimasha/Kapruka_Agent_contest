@@ -19,6 +19,14 @@ async def chat(body: ChatRequest, request: Request, response: Response):
         return {"error": "message is required"}, 400
 
     session_id = get_or_create_session(request, response)
+    auth_header = request.headers.get("Authorization", "")
+
+    log.info(
+        f"CHAT AUTH | "
+        f"has_authorization={bool(auth_header)} | "
+        f"is_bearer={auth_header.startswith('Bearer ')} | "
+        f"session={session_id}"
+    )
     log.info(f"Chat | session={session_id} | msg={body.message[:80]}")
 
     result = await run_orchestrator(session_id, body.message.strip())
