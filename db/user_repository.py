@@ -28,8 +28,8 @@ async def get_auth_user(user_id: str):
 async def get_profile(user_id: str):
     """
     Get the profile directly using auth_users.id.
+    Always return a dictionary.
     """
-
     pool = await get_pool()
 
     async with pool.acquire() as conn:
@@ -45,7 +45,21 @@ async def get_profile(user_id: str):
     if not row:
         return {}
 
-    return row["profile"] or {}
+    profile = row["profile"]
+
+    if profile is None:
+        return {}
+
+    if isinstance(profile, str):
+        try:
+            profile = json.loads(profile)
+        except json.JSONDecodeError:
+            return {}
+
+    if isinstance(profile, dict):
+        return profile
+
+    return {}
 
 
 async def upsert_profile(user_id: str, updates: dict):
