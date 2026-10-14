@@ -43,34 +43,67 @@ async def _dispatch(name: str, args: dict) -> dict:
     raise ValueError(f"Unknown tool: {name}")
 
 
-async def _fetch_images_for_products(products: list[dict]) -> list[dict]:
+async def _fetch_images_for_products(
+    products: list[dict],
+) -> list[dict]:
     """
-    Fetch full product details (including images) for top 3 products.
-    Done in code — not left to the LLM to decide.
+    Fetch full product details, including images, for every product.
     """
-    enriched = []
-    for p in products[:3]:
-        pid = p.get("id")
-        if not pid:
-            enriched.append(p)
-            continue
-        try:
-            result  = await get_product(product_id=pid, currency="LKR")
-            details = extract_single_product(result)
-            if details:
-                # Merge: keep search data, add image_url and product_url from details
-                merged = {**p, **{k: v for k, v in details.items() if v}}
-                enriched.append(merged)
-                log.debug(f"Enriched {p.get('name')} with image: {bool(details.get('image_url'))}")
-            else:
-                enriched.append(p)
-        except Exception as e:
-            log.warning(f"Could not fetch image for {pid}: {e}")
-            enriched.append(p)
+    import asyncio
 
-    # Add remaining products without images
-    enriched.extend(products[3:])
-    return enriched
+    async def enrich_product(p: dict) -> dict:
+        pid = p.get("id") or p.get("product_id")
+
+        if not pid:
+            log.warning(
+                "Skipping product detail fetch: no product ID for %s",
+                p.get("name", "unknown product"),
+            )
+            return p
+
+        try:
+            result = await get_product(
+                product_id=pid,
+                currency="LKR",
+            )
+
+            details = extract_single_product(result)
+
+            if details:
+                # Keep search fields and add the detailed product fields.
+                merged = {
+                    **p,
+                    **{
+                        key: value
+                        for key, value in details.items()
+                        if value is not None and value != ""
+                    },
+                }
+
+                log.info(
+                    "Product enriched | name=%s | image=%s",
+                    merged.get("name"),
+                    bool(merged.get("image_url")),
+                )
+
+                return merged
+
+            log.warning("No product details parsed for %s", pid)
+            return p
+
+        except Exception as e:
+            log.warning(
+                "Could not fetch details for product %s: %s",
+                pid,
+                e,
+            )
+            return p
+
+    # Fetch all products concurrently rather than waiting for each one.
+    return await asyncio.gather(
+        *(enrich_product(p) for p in products)
+    )
+
 
 
 async def run_discovery_agent(
