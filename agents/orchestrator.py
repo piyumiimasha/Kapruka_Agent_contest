@@ -17,6 +17,31 @@ from agents.order_agent import run_order_agent
 log = get_logger("Orchestrator")
 groq = AsyncGroq(api_key=settings.groq_api_key)
 
+# ── Keyword override list ────────────────────────────────────────────────────
+DISCOVERY_KEYWORDS = [
+    "cake", "cakes", "chocolate", "flower", "flowers", "gift", "gifts",
+    "birthday", "anniversary", "product", "products", "buy", "shop",
+    "show me", "find", "search", "looking for", "i need", "i want",
+    "under lkr", "below lkr", "less than", "price", "lkr", "rs.",
+    "food", "drink", "fruit", "sweets", "candy", "toy", "book",
+    "electronics", "gadget", "jewellery", "clothing", "hamper",
+    "watch", "perfume", "cosmetic", "plant", "fruit", "vegetable",
+]
+
+
+def _force_classify(message: str) -> str | None:
+    """Keyword-based override — catches what the LLM misses."""
+    msg = message.lower()
+    if any(kw in msg for kw in DISCOVERY_KEYWORDS):
+        return "search"
+    if any(kw in msg for kw in ["deliver", "delivery", "ship", "city", "send to", "reach"]):
+        return "delivery"
+    if any(kw in msg for kw in ["place order", "confirm order", "checkout", "pay now"]):
+        return "order"
+    if any(kw in msg for kw in ["track", "where is my order", "order status", "order number"]):
+        return "track"
+    return None
+
 
 async def _classify_with_llm(message: str, span) -> str:
     generation = span.generation(
@@ -24,21 +49,29 @@ async def _classify_with_llm(message: str, span) -> str:
         model=settings.groq_agent_model,
         input=message,
     )
-    response = await groq.chat.completions.create(
-        model=settings.groq_agent_model,
-        max_tokens=10,
-        messages=[
-            {"role": "system", "content": (
-                "Classify the user message into exactly one of: "
-                "browse, search, product, delivery, order, track, memory, chitchat. "
-                "Reply with only the intent word."
-            )},
-            {"role": "user", "content": message},
-        ],
-    )
-    result = response.choices[0].message.content.strip().lower()
-    generation.end(output=result)
-    return result
+    try:
+        response = await groq.chat.completions.create(
+            model=settings.groq_agent_model,
+            max_tokens=5,
+            messages=[
+                {"role": "system", "content": (
+                    "Classify into one word only — no punctuation, no explanation:\n"
+                    "browse | search | product | delivery | order | track | memory | chitchat\n"
+                    "Reply with exactly one of those words."
+                )},
+                {"role": "user", "content": message},
+            ],
+        )
+        result = response.choices[0].message.content.strip().lower()
+        # Strip punctuation and take first word only
+        result = re.sub(r"[^a-z]", " ", result).split()[0] if result else ""
+        log.info(f"LLM classified intent: '{result}'")
+        generation.end(output=result)
+        return result
+    except Exception as e:
+        log.warning(f"LLM intent classification failed: {e}")
+        generation.end(output="search")
+        return "search"
 
 
 async def _extract_and_save_from_llm(user_id: str, user_message: str, agent_reply: str):
@@ -98,14 +131,17 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
     )
 
     try:
+        # 1. Load user context
         user, profile = await load_user_context(session_id)
         user_id = str(user["id"])
         lf_trace.update(user_id=user_id)
 
+        # 2. Build memory context
         memory_span = lf_trace.span(name="build-memory-context")
         memory_context = await build_memory_context(session_id, user_id, profile, user_message)
         memory_span.end()
 
+        # 3. Load history
         history = get_history(session_id)
         if not history:
             history = await load_history_from_db(session_id, user_id)
@@ -113,28 +149,60 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
                 add_turn(session_id, turn["role"], turn["content"])
             log.debug(f"Loaded {len(history)} turns from DB for {session_id}")
 
+        # 4. Intent classification — 3 layers
         intent_span = lf_trace.span(name="classify-intent")
-        intent, confident = classify_intent(user_message)
-        if not confident:
-            intent = await _classify_with_llm(user_message, lf_trace)
-        intent_span.end(metadata={"intent": intent, "confident": confident})
-        log.info(f"Intent: {intent}")
 
+        # Layer 1: rule-based fast classifier
+        intent, confident = classify_intent(user_message)
+        log.info(f"Rule classifier: intent='{intent}' confident={confident}")
+
+        # Layer 2: keyword override
+        if not confident or not intent:
+            forced = _force_classify(user_message)
+            if forced:
+                intent = forced
+                confident = True
+                log.info(f"Keyword override: intent='{intent}'")
+
+        # Layer 3: LLM fallback
+        if not confident or not intent:
+            intent = await _classify_with_llm(user_message, lf_trace)
+            log.info(f"LLM fallback: intent='{intent}'")
+
+        # Safety default
+        if not intent or intent not in (
+            "browse", "search", "product", "delivery",
+            "order", "track", "memory", "chitchat"
+        ):
+            log.warning(f"Unknown intent '{intent}', defaulting to search")
+            intent = "search"
+
+        intent_span.end(metadata={"intent": intent, "confident": confident})
+        log.info(f"Final intent: {intent}")
+
+        # 5. Route to sub-agent
         target = route_intent(intent)
-        agent_span = lf_trace.span(name=f"agent-{target}", metadata={"agent": target, "intent": intent})
+        log.info(f"Routing to: {target}")
+
+        agent_span = lf_trace.span(
+            name=f"agent-{target}",
+            metadata={"agent": target, "intent": intent},
+        )
 
         products = []
 
         if target == "discovery":
-            result  = await run_discovery_agent(user_message, history, memory_context, lf_trace)
-            reply   = result["reply"]
+            result   = await run_discovery_agent(user_message, history, memory_context, lf_trace)
+            reply    = result["reply"]
             products = result.get("products", [])
 
         elif target == "delivery":
             reply = await run_delivery_agent(user_message, history, memory_context, lf_trace)
 
         elif target == "order":
-            reply = await run_order_agent(user_message, history, memory_context, session_id, user_id, lf_trace)
+            reply = await run_order_agent(
+                user_message, history, memory_context, session_id, user_id, lf_trace
+            )
 
         else:
             gen = lf_trace.generation(
@@ -159,9 +227,11 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
 
         agent_span.end()
 
+        # 6. Persist turns
         await add_turn_and_persist(session_id, user_id, "user",      user_message)
         await add_turn_and_persist(session_id, user_id, "assistant",  reply, agent=target)
 
+        # 7. Extract and save profile info
         await _extract_and_save_from_llm(user_id, user_message, reply)
 
         lf_trace.update(output=reply, metadata={"agent": target})
