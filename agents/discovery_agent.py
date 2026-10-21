@@ -1,5 +1,5 @@
 import json
-from groq import AsyncGroq
+from groq import AsyncGroq, BadRequestError
 from config.settings import settings
 from prompts.discovery_prompts import build_discovery_prompt
 from kapruka_mcp.tools.search_products import search_products
@@ -105,6 +105,16 @@ async def _fetch_images_for_products(
     )
 
 
+async def _fallback_search(user_message: str) -> list[dict]:
+    """Search directly when the model emits an invalid tool call payload."""
+    result = await search_products(
+        q=user_message,
+        currency=settings.kapruka_default_currency,
+        sort="relevance",
+        limit=10,
+    )
+    return extract_products_from_search(result)
+
 
 async def run_discovery_agent(
     user_message: str,
@@ -123,6 +133,8 @@ async def run_discovery_agent(
     MAX_TOOL_LOOPS = 5
     loop_count     = 0
     collected_products: list[dict] = []
+    fallback_reply: str | None = None
+    response = None
 
     while loop_count < MAX_TOOL_LOOPS:
         loop_count += 1
@@ -133,13 +145,27 @@ async def run_discovery_agent(
             input=messages,
         ) if lf_trace else None
 
-        response = await groq.chat.completions.create(
-            model=settings.groq_agent_model,
-            max_tokens=settings.groq_max_tokens,
-            messages=[{"role": "system", "content": system}, *messages],
-            tools=TOOLS,
-            tool_choice="auto",
-        )
+        try:
+            response = await groq.chat.completions.create(
+                model=settings.groq_agent_model,
+                max_tokens=settings.groq_max_tokens,
+                messages=[{"role": "system", "content": system}, *messages],
+                tools=TOOLS,
+                tool_choice="auto",
+            )
+        except BadRequestError as exc:
+            if "Failed to parse tool call arguments as JSON" not in str(exc):
+                raise
+
+            log.warning(
+                "Model returned malformed tool arguments; falling back to direct catalog search"
+            )
+            if gen:
+                gen.end(output="[malformed tool call]", metadata={"error": str(exc)})
+
+            collected_products.extend(await _fallback_search(user_message))
+            fallback_reply = "Here are some product options for you:"
+            break
 
         assistant_msg = response.choices[0].message
 
@@ -220,9 +246,10 @@ async def run_discovery_agent(
     if loop_count >= MAX_TOOL_LOOPS:
         log.warning(f"Discovery agent hit max loops ({MAX_TOOL_LOOPS})")
 
-    final_reply = (
+    final_reply = fallback_reply or (
         response.choices[0].message.content
-        or "I couldn't find suitable products. Please try a different search."
+        if response
+        else "I couldn't find suitable products. Please try a different search."
     )
 
     # ── Deduplicate ──────────────────────────────────────────────────────
