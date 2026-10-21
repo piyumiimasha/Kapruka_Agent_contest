@@ -60,6 +60,48 @@ header{display:flex;align-items:center;justify-content:space-between;padding:14p
 .typing span:nth-child(2){animation-delay:.15s}
 .typing span:nth-child(3){animation-delay:.3s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+/* Product cards */
+.products-row{display:flex;gap:12px;flex-wrap:wrap;padding:4px 0 12px 38px}
+.product-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:160px;overflow:hidden;flex-shrink:0;transition:border-color .2s,transform .2s}
+.product-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.product-card img{width:100%;height:130px;object-fit:cover;background:var(--surface2);display:block}
+.pc-img-placeholder{width:100%;height:130px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:32px}
+.pc-body{padding:10px}
+.pc-name{font-size:12px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pc-price{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:4px}
+.pc-stock{font-size:10px;color:var(--muted);margin-bottom:8px}
+.pc-btn{display:block;width:100%;padding:7px 0;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);transition:background .2s}
+.pc-btn:hover{background:#c93d22}
+/* Modal */
+#product-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;align-items:center;justify-content:center;padding:20px}
+#product-modal.open{display:flex}
+.modal-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;width:100%;max-width:520px;max-height:92dvh;overflow-y:auto;animation:fadeUp .2s ease}
+.modal-img{width:100%;height:280px;object-fit:cover;border-radius:20px 20px 0 0;display:block}
+.modal-img-placeholder{width:100%;height:280px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:56px;border-radius:20px 20px 0 0}
+.modal-body{padding:22px}
+.modal-name{font-family:var(--serif);font-size:21px;margin-bottom:8px;line-height:1.3}
+.modal-price{font-size:26px;font-weight:700;color:var(--accent);margin-bottom:12px}
+.modal-badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.badge{font-size:11px;padding:4px 10px;border-radius:20px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+.badge.green{background:#1a3a2a;color:#4caf80;border-color:#2a5a3a}
+.badge.red{background:#3a1a1a;color:#e84040;border-color:#5a2a2a}
+.modal-section{margin-bottom:16px}
+.modal-section-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.modal-desc{font-size:13px;color:var(--text);line-height:1.75}
+.modal-truncated-note{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic}
+.modal-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.modal-info-item{background:var(--surface2);border-radius:8px;padding:10px 12px}
+.modal-info-item .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.modal-info-item .value{font-size:13px;color:var(--text);font-weight:500}
+.modal-kapruka-link{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--muted);font-size:13px;text-decoration:none;margin-bottom:16px;transition:all .2s}
+.modal-kapruka-link:hover{border-color:var(--accent);color:var(--accent)}
+.modal-actions{display:flex;gap:10px}
+.modal-order-btn{flex:1;padding:14px;background:var(--accent);border:none;border-radius:var(--r);color:#fff;font-family:var(--sans);font-size:15px;font-weight:700;cursor:pointer;transition:background .2s}
+.modal-order-btn:hover{background:#c93d22}
+.modal-back-btn{padding:14px 18px;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--muted);font-family:var(--sans);font-size:14px;cursor:pointer;transition:all .2s}
+.modal-back-btn:hover{border-color:var(--accent);color:var(--accent)}
+.modal-loading{text-align:center;padding:60px 20px;color:var(--muted);font-size:14px}
+/* Input */
 #input-area{padding:16px 20px;padding-bottom:max(16px,env(safe-area-inset-bottom));border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .input-row{display:flex;gap:10px;align-items:flex-end;max-width:800px;margin:0 auto}
 #message-input{flex:1;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:14px;resize:none;outline:none;min-height:46px;max-height:120px;line-height:1.5;transition:border-color .2s}
@@ -70,88 +112,6 @@ header{display:flex;align-items:center;justify-content:space-between;padding:14p
 #send-btn:disabled{background:var(--surface2);cursor:default}
 #send-btn svg{width:18px;height:18px;fill:#fff}
 #rate-bar{font-size:11px;color:var(--muted);text-align:center;margin-top:8px;max-width:800px;margin-left:auto;margin-right:auto}
-
-/* ── Product cards ───────────────────────────────────────────────── */
-.products-row {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 4px 0 12px 38px;
-  max-width: 100%;
-}
-.product-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  width: 160px;
-  overflow: hidden;
-  flex-shrink: 0;
-  transition: border-color .2s, transform .2s;
-  cursor: pointer;
-  text-decoration: none;
-}
-.product-card:hover {
-  border-color: var(--accent);
-  transform: translateY(-2px);
-}
-.product-card img {
-  width: 100%;
-  height: 130px;
-  object-fit: cover;
-  background: var(--surface2);
-  display: block;
-}
-.product-card .pc-img-placeholder {
-  width: 100%;
-  height: 130px;
-  background: var(--surface2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 32px;
-}
-.product-card .pc-body {
-  padding: 10px;
-}
-.product-card .pc-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.4;
-  margin-bottom: 4px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.product-card .pc-price {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
-  margin-bottom: 8px;
-}
-.product-card .pc-stock {
-  font-size: 10px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-.product-card .pc-btn {
-  display: block;
-  width: 100%;
-  padding: 7px 0;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  font-family: var(--sans);
-  transition: background .2s;
-}
-.product-card .pc-btn:hover { background: #c93d22; }
-
 </style>
 </head>
 <body>
@@ -191,6 +151,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:14p
       <button class="logout-btn" onclick="logout()">Sign out</button>
     </div>
   </header>
+
   <div id="chat-area">
     <div class="welcome" id="welcome">
       <h2>What can I find for you?</h2>
@@ -203,6 +164,45 @@ header{display:flex;align-items:center;justify-content:space-between;padding:14p
       </div>
     </div>
   </div>
+
+  <!-- Product detail modal -->
+  <div id="product-modal">
+    <div class="modal-card">
+      <div class="modal-loading" id="modal-loading">Loading product details…</div>
+      <div id="modal-content" style="display:none">
+        <div id="modal-img-wrap"></div>
+        <div class="modal-body">
+          <div class="modal-name"   id="modal-name"></div>
+          <div class="modal-price"  id="modal-price"></div>
+          <div class="modal-badges" id="modal-badges"></div>
+
+          <!-- Description -->
+          <div class="modal-section" id="modal-desc-section" style="display:none">
+            <div class="modal-section-label">About this product</div>
+            <div class="modal-desc" id="modal-desc"></div>
+            <div class="modal-truncated-note" id="modal-truncated" style="display:none">
+              Description may be truncated — see full details on Kapruka
+            </div>
+          </div>
+
+          <!-- Info grid: delivery, vendor, shipping -->
+          <div class="modal-info-grid" id="modal-info-grid"></div>
+
+          <!-- View on Kapruka link -->
+          <a class="modal-kapruka-link" id="modal-kapruka-link" href="#" target="_blank" rel="noopener">
+            🔗 View full details on Kapruka ↗
+          </a>
+
+          <!-- Actions -->
+          <div class="modal-actions">
+            <button class="modal-order-btn" onclick="startOrder()">🛒 Order this</button>
+            <button class="modal-back-btn"  onclick="closeModal()">Back</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="input-area">
     <div class="input-row">
       <textarea id="message-input" placeholder="Ask about products, delivery, or place an order…" rows="1"
@@ -217,26 +217,24 @@ header{display:flex;align-items:center;justify-content:space-between;padding:14p
 
 <script>
 const API = 'http://localhost:8000';
+let _currentProduct = null;
 
-// ── Token always read from localStorage — never from a JS variable ─────────
-// This is the key fix: token survives page reloads and is sent on every request
 function getToken() { return localStorage.getItem('kapruka_token'); }
 function setToken(t) { localStorage.setItem('kapruka_token', t); }
-function getUser()  { try { return JSON.parse(localStorage.getItem('kapruka_user')); } catch { return null; } }
-function setUser(u) { localStorage.setItem('kapruka_user', JSON.stringify(u)); }
-function clearAuth(){ localStorage.removeItem('kapruka_token'); localStorage.removeItem('kapruka_user'); }
-
+function getUser()   { try { return JSON.parse(localStorage.getItem('kapruka_user')); } catch { return null; } }
+function setUser(u)  { localStorage.setItem('kapruka_user', JSON.stringify(u)); }
+function clearAuth() { localStorage.removeItem('kapruka_token'); localStorage.removeItem('kapruka_user'); }
 function authHeaders() {
   const t = getToken();
   return { 'Content-Type': 'application/json', ...(t ? { 'Authorization': `Bearer ${t}` } : {}) };
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.auth-tab').forEach((btn, i) =>
-    btn.classList.toggle('active', (i === 0) === (tab === 'login')));
+  document.querySelectorAll('.auth-tab').forEach((b, i) =>
+    b.classList.toggle('active', (i === 0) === (tab === 'login')));
   document.getElementById('login-form').style.display    = tab === 'login'    ? '' : 'none';
   document.getElementById('register-form').style.display = tab === 'register' ? '' : 'none';
-  document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('auth-error').style.display    = 'none';
 }
 
 function showError(msg) {
@@ -279,13 +277,6 @@ function logout() {
   clearAuth();
   document.getElementById('auth-overlay').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
-  document.getElementById('chat-area').innerHTML = `<div class="welcome" id="welcome">
-    <h2>What can I find for you?</h2>
-    <p>Search products, check delivery, and place orders.</p>
-    <div class="suggestions">
-      <button class="suggestion" onclick="sendSuggestion(this)">Birthday cakes under LKR 3000</button>
-      <button class="suggestion" onclick="sendSuggestion(this)">Can you deliver to Kandy?</button>
-    </div></div>`;
 }
 
 function showApp() {
@@ -302,8 +293,8 @@ function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(e
 function handleKey(e)   { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
 function sendSuggestion(btn) { document.getElementById('message-input').value = btn.textContent; sendMessage(); }
 function escapeHtml(t) {
-  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-          .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  return String(t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                         .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 }
 
 function appendMessage(role, text, agent) {
@@ -312,7 +303,7 @@ function appendMessage(role, text, agent) {
   const area = document.getElementById('chat-area');
   const div  = document.createElement('div');
   div.className = `message ${role}`;
-  const user = getUser();
+  const user    = getUser();
   const initial = role === 'user'
     ? (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase() : 'K';
   const tag = (role === 'bot' && agent)
@@ -342,44 +333,54 @@ function updateRateBar(rl) {
     `${rl.requests_remaining_this_minute} req/min · ${rl.create_orders_remaining_this_hour} orders/hr remaining`;
 }
 
+function renderProductCards(products) {
+  if (!products || !products.length) return;
+  const area = document.getElementById('chat-area');
+  const row  = document.createElement('div');
+  row.className = 'products-row';
+  products.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'product-card';
+    const imgHtml = p.image_url
+      ? `<img src="${escapeHtml(p.image_url)}" alt="${escapeHtml(p.name || '')}" loading="lazy"
+             onerror="this.parentNode.innerHTML='<div class=pc-img-placeholder>🛍️</div>'">`
+      : `<div class="pc-img-placeholder">🛍️</div>`;
+    card.innerHTML = `
+      ${imgHtml}
+      <div class="pc-body">
+        <div class="pc-name">${escapeHtml(p.name || 'Product')}</div>
+        <div class="pc-price">${escapeHtml(p.price || '')}</div>
+        ${p.stock ? `<div class="pc-stock">${escapeHtml(p.stock)}</div>` : ''}
+        <button class="pc-btn" onclick='openProductModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>Choose</button>
+      </div>`;
+    row.appendChild(card);
+  });
+  area.appendChild(row);
+  area.scrollTop = area.scrollHeight;
+}
+
 async function sendMessage() {
   const input = document.getElementById('message-input');
   const text  = input.value.trim();
   if (!text) return;
-
-  if (!getToken()) {
-    document.getElementById('auth-overlay').style.display = 'flex';
-    document.getElementById('app').style.display = 'none';
-    return;
-  }
-
+  if (!getToken()) { document.getElementById('auth-overlay').style.display = 'flex'; return; }
   input.value = ''; input.style.height = 'auto';
   document.getElementById('send-btn').disabled = true;
   appendMessage('user', text);
   appendTyping();
-
   try {
     const res  = await fetch(`${API}/api/chat/`, {
-      method:  'POST',
-      headers: authHeaders(),   // ← always fresh from localStorage
-      body:    JSON.stringify({ message: text }),
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ message: text }),
     });
     removeTyping();
     const data = await res.json();
-
-    if (res.status === 401) {
-      clearAuth();
-      document.getElementById('auth-overlay').style.display = 'flex';
-      document.getElementById('app').style.display = 'none';
-      return;
-    }
+    if (res.status === 401) { clearAuth(); document.getElementById('auth-overlay').style.display = 'flex'; return; }
     if (!res.ok) {
       appendMessage('bot', `Error: ${data.message || data.error || 'Something went wrong'}`);
     } else {
-      appendMessage('bot', data.reply, data.agent);
-      if (data.products && data.products.length > 0) {
-        renderProductCards(data.products);
-      }
+      if (data.reply) appendMessage('bot', data.reply, data.agent);
+      if (data.products && data.products.length) renderProductCards(data.products);
       updateRateBar(data.rate_limits);
     }
   } catch {
@@ -391,52 +392,111 @@ async function sendMessage() {
   }
 }
 
-
-// ── Product cards ──────────────────────────────────────────────────────────
-function renderProductCards(products) {
-  if (!products || products.length === 0) return;
-
-  const area = document.getElementById('chat-area');
-  const row  = document.createElement('div');
-  row.className = 'products-row';
-
-  products.forEach(p => {
-    const card = document.createElement('a');
-    card.className = 'product-card';
-    card.href   = p.product_url || '#';
-    card.target = '_blank';
-    card.rel    = 'noopener noreferrer';
-
-    const imgHtml = p.image_url
-      ? `<img src="${p.image_url}" alt="${escapeHtml(p.name || '')}" loading="lazy"
-             onerror="this.parentNode.innerHTML='<div class=pc-img-placeholder>🛍️</div>'">`
-      : `<div class="pc-img-placeholder">🛍️</div>`;
-
-    card.innerHTML = `
-      ${imgHtml}
-      <div class="pc-body">
-        <div class="pc-name">${escapeHtml(p.name || 'Product')}</div>
-        <div class="pc-price">${escapeHtml(p.price || '')}</div>
-        ${p.stock ? `<div class="pc-stock">${escapeHtml(p.stock)}</div>` : ''}
-        <button class="pc-btn" onclick="event.preventDefault();
-          document.getElementById('message-input').value='Tell me more about ${escapeHtml(p.name || '')}';
-          sendMessage();">
-          Choose
-        </button>
-      </div>`;
-
-    row.appendChild(card);
-  });
-
-  area.appendChild(row);
-  area.scrollTop = area.scrollHeight;
+// ── Modal ──────────────────────────────────────────────────────────────────
+function closeModal() {
+  document.getElementById('product-modal').classList.remove('open');
+  _currentProduct = null;
 }
 
-// Init — restore session from localStorage on page load
+document.getElementById('product-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+async function openProductModal(product) {
+  _currentProduct = product;
+  document.getElementById('modal-loading').style.display = 'block';
+  document.getElementById('modal-content').style.display = 'none';
+  document.getElementById('product-modal').classList.add('open');
+
+  try {
+    const res  = await fetch(`${API}/api/chat/`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ message: `__get_product_detail__:${product.id}:${product.name}` }),
+    });
+    const data = await res.json();
+    const detail = (data.products && data.products[0]) ? data.products[0] : product;
+    _currentProduct = { ...product, ...detail };
+  } catch {
+    // use card data as fallback
+  }
+  populateModal(_currentProduct);
+}
+
+function populateModal(p) {
+  // Image
+  const imgWrap = document.getElementById('modal-img-wrap');
+  imgWrap.innerHTML = p.image_url
+    ? `<img class="modal-img" src="${escapeHtml(p.image_url)}" alt="${escapeHtml(p.name || '')}"
+           onerror="this.parentNode.innerHTML='<div class=modal-img-placeholder>🛍️</div>'">`
+    : `<div class="modal-img-placeholder">🛍️</div>`;
+
+  // Name & price
+  document.getElementById('modal-name').textContent  = p.name  || '';
+  document.getElementById('modal-price').textContent = p.price || '';
+
+  // Badges
+  const badges = document.getElementById('modal-badges');
+  badges.innerHTML = '';
+  if (p.stock) {
+    const inStock = p.stock.toLowerCase().includes('in stock');
+    badges.innerHTML += `<span class="badge ${inStock ? 'green' : 'red'}">📦 ${escapeHtml(p.stock)}</span>`;
+  }
+  if (p.delivery)
+    badges.innerHTML += `<span class="badge">🚚 ${escapeHtml(p.delivery)}</span>`;
+  if (p.international_shipping === 'Yes')
+    badges.innerHTML += `<span class="badge">✈️ Ships internationally</span>`;
+  if (p.category)
+    badges.innerHTML += `<span class="badge">${escapeHtml(p.category)}</span>`;
+
+  // Description
+  const descSection = document.getElementById('modal-desc-section');
+  if (p.description) {
+    document.getElementById('modal-desc').textContent = p.description;
+    const truncEl = document.getElementById('modal-truncated');
+    truncEl.style.display = p.description_truncated ? 'block' : 'none';
+    descSection.style.display = 'block';
+  } else {
+    descSection.style.display = 'none';
+  }
+
+  // Info grid
+  const grid = document.getElementById('modal-info-grid');
+  grid.innerHTML = '';
+  const infoItems = [
+    p.vendor   ? { label: 'Vendor',   value: p.vendor }   : null,
+    p.category ? { label: 'Category', value: p.category } : null,
+    p.delivery ? { label: 'Delivery', value: p.delivery } : null,
+    p.international_shipping ? { label: "Int'l Shipping", value: p.international_shipping } : null,
+  ].filter(Boolean);
+  infoItems.forEach(item => {
+    grid.innerHTML += `<div class="modal-info-item">
+      <div class="label">${escapeHtml(item.label)}</div>
+      <div class="value">${escapeHtml(item.value)}</div>
+    </div>`;
+  });
+
+  // Kapruka link
+  const link = document.getElementById('modal-kapruka-link');
+  link.href  = p.product_url || '#';
+  link.style.display = p.product_url ? 'flex' : 'none';
+
+  document.getElementById('modal-loading').style.display = 'none';
+  document.getElementById('modal-content').style.display = 'block';
+}
+
+function startOrder() {
+  if (!_currentProduct) return;
+  const p = _currentProduct;
+  closeModal();
+  const msg = `I want to order the "${p.name}"${p.id ? ` (ID: ${p.id})` : ''}. It costs ${p.price || 'LKR'}. Please help me place this order.`;
+  document.getElementById('message-input').value = msg;
+  sendMessage();
+}
+
+// Init
 if (getToken() && getUser()) { showApp(); } else { clearAuth(); }
 document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 document.getElementById('reg-password').addEventListener('keydown',  e => { if (e.key === 'Enter') register(); });
 </script>
 </body>
 </html>
-<!-- Product cards injected via JS — see sendMessage() -->

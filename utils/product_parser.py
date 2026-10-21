@@ -7,45 +7,30 @@ log = get_logger("ProductParser")
 def extract_products_from_search(result: dict) -> list[dict]:
     """
     Parse kapruka_search_products MCP response.
-
-    Format per product:
-    **1. Product Name**
-       ID: `CAKE00KA002222` · LKR 2,610 · In stock (low) · ships internationally
-       [View product](https://www.kapruka.com/...)
+    Format: **1. Name**\n   ID: `id` · LKR X · stock · shipping\n   [View product](url)
     """
     text = result.get("text", "")
     if not text:
         return []
 
     products = []
-
-    # Match each numbered product block
-    # **1. Name**\n   ID: `...` · LKR ... · stock · ...\n   [View product](url)
     pattern = re.compile(
-        r"\*\*\d+\.\s+(.+?)\*\*\s*\n"          # **1. Product Name**
-        r"\s+ID:\s+`([^`]+)`\s*·\s*"            # ID: `CAKE00KA002222` ·
-        r"(LKR[\s\d,]+)\s*·\s*"                 # LKR 2,610 ·
-        r"([^·\n]+?)(?:\s*·\s*([^\n]+))?\s*\n"  # In stock (low) · ships internationally
-        r"\s+\[View product\]\(([^)]+)\)",       # [View product](url)
+        r"\*\*\d+\.\s+(.+?)\*\*\s*\n"
+        r"\s+ID:\s+`([^`]+)`\s*·\s*"
+        r"(LKR[\s\d,]+)\s*·\s*"
+        r"([^·\n]+?)(?:\s*·\s*([^\n]+))?\s*\n"
+        r"\s+\[View product\]\(([^)]+)\)",
         re.MULTILINE,
     )
-
     for m in pattern.finditer(text):
-        name       = m.group(1).strip()
-        product_id = m.group(2).strip()
-        price      = m.group(3).strip()
-        stock      = m.group(4).strip()
-        shipping   = (m.group(5) or "").strip()
-        url        = m.group(6).strip()
-
         products.append({
-            "id":          product_id,
-            "name":        name,
-            "price":       price,
-            "stock":       stock,
-            "shipping":    shipping,
-            "product_url": url,
-            "image_url":   None,  # not in search — populated by get_product
+            "id":          m.group(2).strip(),
+            "name":        m.group(1).strip(),
+            "price":       m.group(3).strip(),
+            "stock":       m.group(4).strip(),
+            "shipping":    (m.group(5) or "").strip(),
+            "product_url": m.group(6).strip(),
+            "image_url":   None,
         })
 
     log.debug(f"Parsed {len(products)} products from search text")
@@ -56,11 +41,19 @@ def extract_single_product(result: dict) -> dict | None:
     """
     Parse kapruka_get_product MCP response.
 
-    Format:
-    ## Product Name
-    **ID**: `ID`
-    **Price**: LKR X,XXX
-    **Stock**: In stock (high)
+    Raw format example:
+    ## Pink Serenity Pink Red Roses Heart Shaped Flower Arrangement
+    **ID**: `flowers00T2203`
+    **Price**: LKR 2,500
+    **Stock**: In stock (low)
+    **Category**: flowers
+    **Vendor**: Flowers
+    **Weight**: 0 lbs
+    **International shipping**: No
+    **Delivery**: Island-wide
+
+    The Pink Serenity... [description paragraph]
+
     **Image**: https://...
     [View on Kapruka](url)
     """
@@ -70,7 +63,7 @@ def extract_single_product(result: dict) -> dict | None:
 
     product = {}
 
-    # Name
+    # Name — first ## heading
     m = re.search(r"^##\s+(.+)$", text, re.MULTILINE)
     if m:
         product["name"] = m.group(1).strip()
@@ -90,7 +83,27 @@ def extract_single_product(result: dict) -> dict | None:
     if m:
         product["stock"] = m.group(1).strip()
 
-    # Image
+    # Category
+    m = re.search(r"\*\*Category\*\*:\s*(.+)", text)
+    if m:
+        product["category"] = m.group(1).strip()
+
+    # Vendor
+    m = re.search(r"\*\*Vendor\*\*:\s*(.+)", text)
+    if m:
+        product["vendor"] = m.group(1).strip()
+
+    # International shipping
+    m = re.search(r"\*\*International shipping\*\*:\s*(.+)", text)
+    if m:
+        product["international_shipping"] = m.group(1).strip()
+
+    # Delivery scope
+    m = re.search(r"\*\*Delivery\*\*:\s*(.+)", text)
+    if m:
+        product["delivery"] = m.group(1).strip()
+
+    # Image URL
     m = re.search(r"\*\*Image\*\*:\s*(https?://\S+)", text)
     if m:
         product["image_url"] = m.group(1).strip()
@@ -100,10 +113,17 @@ def extract_single_product(result: dict) -> dict | None:
     if m:
         product["product_url"] = m.group(1).strip()
 
-    # Description snippet
-    m = re.search(r"\*\*Delivery\*\*:.+?\n+(.+?)\n+\*\*Image\*\*", text, re.DOTALL)
+    # Description — paragraph between the metadata block and **Image**
+    # Everything after a blank line following **Delivery** and before **Image**
+    m = re.search(
+        r"\*\*Delivery\*\*:[^\n]*\n+(.+?)\n+\*\*Image\*\*",
+        text, re.DOTALL
+    )
     if m:
-        product["description"] = m.group(1).strip()[:200]
+        desc = m.group(1).strip()
+        # Remove trailing ellipsis note — MCP truncates descriptions
+        product["description"] = desc
+        product["description_truncated"] = desc.endswith("...")
 
     if not product.get("name") and not product.get("id"):
         return None
