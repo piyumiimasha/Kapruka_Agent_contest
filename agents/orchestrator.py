@@ -17,7 +17,6 @@ from agents.order_agent import run_order_agent
 log = get_logger("Orchestrator")
 groq = AsyncGroq(api_key=settings.groq_api_key)
 
-# ── Keyword override list ────────────────────────────────────────────────────
 DISCOVERY_KEYWORDS = [
     "cake", "cakes", "chocolate", "flower", "flowers", "gift", "gifts",
     "birthday", "anniversary", "product", "products", "buy", "shop",
@@ -25,12 +24,11 @@ DISCOVERY_KEYWORDS = [
     "under lkr", "below lkr", "less than", "price", "lkr", "rs.",
     "food", "drink", "fruit", "sweets", "candy", "toy", "book",
     "electronics", "gadget", "jewellery", "clothing", "hamper",
-    "watch", "perfume", "cosmetic", "plant", "fruit", "vegetable",
+    "watch", "perfume", "cosmetic", "plant", "vegetable",
 ]
 
 
 def _force_classify(message: str) -> str | None:
-    """Keyword-based override — catches what the LLM misses."""
     msg = message.lower()
     if any(kw in msg for kw in DISCOVERY_KEYWORDS):
         return "search"
@@ -63,7 +61,6 @@ async def _classify_with_llm(message: str, span) -> str:
             ],
         )
         result = response.choices[0].message.content.strip().lower()
-        # Strip punctuation and take first word only
         result = re.sub(r"[^a-z]", " ", result).split()[0] if result else ""
         log.info(f"LLM classified intent: '{result}'")
         generation.end(output=result)
@@ -75,6 +72,7 @@ async def _classify_with_llm(message: str, span) -> str:
 
 
 async def _extract_and_save_from_llm(user_id: str, user_message: str, agent_reply: str):
+    """Extract ONLY permanent profile facts — not session-scoped info like budget."""
     try:
         conversation = f"User: {user_message}\nAssistant: {agent_reply}"
         response = await groq.chat.completions.create(
@@ -98,12 +96,8 @@ async def _extract_and_save_from_llm(user_id: str, user_message: str, agent_repl
         updates = {}
         if extracted.get("preferred_city"):
             updates["preferred_city"] = extracted["preferred_city"]
-        if extracted.get("budget_min") is not None:
-            updates["budget_min"] = extracted["budget_min"]
-        if extracted.get("budget_max") is not None:
-            updates["budget_max"] = extracted["budget_max"]
-        if extracted.get("currency"):
-            updates["currency"] = extracted["currency"]
+        if extracted.get("about_recipients"):
+            updates["about_recipients"] = extracted["about_recipients"]
 
         if updates:
             await update_preferences(user_id, updates)
@@ -116,9 +110,23 @@ async def _extract_and_save_from_llm(user_id: str, user_message: str, agent_repl
         for d in extracted.get("dislikes", []):
             await add_dislike(user_id, d)
 
-        log.info(f"Profile updated from conversation for {user_id}")
+        if extracted:
+            log.info(f"Profile updated for {user_id}: {list(extracted.keys())}")
     except Exception as e:
         log.warning(f"Memory extraction failed (non-fatal): {e}")
+
+
+def _get_user_id_from_session(session_id: str) -> str:
+    """
+    session_id format: {user_id}_{chat_id}
+    Extract the user_id part for profile/episode lookups.
+    Falls back to session_id if no underscore pattern found (old format).
+    """
+    # UUID is 36 chars: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    # session_id = "{36-char-uuid}_{36-char-uuid}"
+    if len(session_id) > 36 and session_id[36] == "_":
+        return session_id[:36]
+    return session_id
 
 
 async def run_orchestrator(session_id: str, user_message: str) -> dict:
@@ -131,17 +139,18 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
     )
 
     try:
-        # 1. Load user context
-        user, profile = await load_user_context(session_id)
-        user_id = str(user["id"])
+        # Extract stable user_id from composite session_id
+        user_id = _get_user_id_from_session(session_id)
+
+        # Load user profile using stable user_id
+        user, profile = await load_user_context(user_id)
         lf_trace.update(user_id=user_id)
 
-        # 2. Build memory context
         memory_span = lf_trace.span(name="build-memory-context")
         memory_context = await build_memory_context(session_id, user_id, profile, user_message)
         memory_span.end()
 
-        # 3. Load history
+        # History is scoped to this chat session (session_id includes chat_id)
         history = get_history(session_id)
         if not history:
             history = await load_history_from_db(session_id, user_id)
@@ -149,14 +158,12 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
                 add_turn(session_id, turn["role"], turn["content"])
             log.debug(f"Loaded {len(history)} turns from DB for {session_id}")
 
-        # 4. Intent classification — 3 layers
+        # Intent classification — 3 layers
         intent_span = lf_trace.span(name="classify-intent")
 
-        # Layer 1: rule-based fast classifier
         intent, confident = classify_intent(user_message)
         log.info(f"Rule classifier: intent='{intent}' confident={confident}")
 
-        # Layer 2: keyword override
         if not confident or not intent:
             forced = _force_classify(user_message)
             if forced:
@@ -164,12 +171,10 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
                 confident = True
                 log.info(f"Keyword override: intent='{intent}'")
 
-        # Layer 3: LLM fallback
         if not confident or not intent:
             intent = await _classify_with_llm(user_message, lf_trace)
             log.info(f"LLM fallback: intent='{intent}'")
 
-        # Safety default
         if not intent or intent not in (
             "browse", "search", "product", "delivery",
             "order", "track", "memory", "chitchat"
@@ -180,7 +185,6 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
         intent_span.end(metadata={"intent": intent, "confident": confident})
         log.info(f"Final intent: {intent}")
 
-        # 5. Route to sub-agent
         target = route_intent(intent)
         log.info(f"Routing to: {target}")
 
@@ -227,11 +231,10 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
 
         agent_span.end()
 
-        # 6. Persist turns
         await add_turn_and_persist(session_id, user_id, "user",      user_message)
         await add_turn_and_persist(session_id, user_id, "assistant",  reply, agent=target)
 
-        # 7. Extract and save profile info
+        # Only save permanent facts — not session budget/preferences
         await _extract_and_save_from_llm(user_id, user_message, reply)
 
         lf_trace.update(output=reply, metadata={"agent": target})

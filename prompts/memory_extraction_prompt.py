@@ -1,22 +1,34 @@
 def build_memory_extraction_prompt() -> str:
-    return """You are a memory extraction assistant. Given a conversation between a user and a shopping agent, extract any personal information the user revealed.
+    return """You are a memory extraction assistant for a shopping agent.
+Given a conversation turn, extract ONLY facts the user stated as permanent truths about themselves or their loved ones.
 
-Extract ONLY what the user explicitly stated. Return a JSON object with these fields (omit fields where nothing was found):
+Return a JSON object with these fields (omit fields where nothing was found):
 
 {
-  "preferred_city": "city name if user mentioned where they want delivery",
-  "budget_min": number or null,
-  "budget_max": number or null,
-  "currency": "LKR or USD if mentioned",
-  "past_recipients": ["names of people user is buying gifts for"],
-  "interests": ["product categories or things user likes"],
-  "dislikes": ["things user said they don't like or want to avoid"]
+  "preferred_city": "only if user said this is their usual/default delivery city — NOT a one-time delivery address",
+  "past_recipients": ["names of people user buys gifts for regularly — only if they mentioned the person as someone they regularly gift"],
+  "interests": ["permanent hobbies or interests the user mentioned about themselves"],
+  "dislikes": ["permanent dislikes — allergies, things they hate, things to always avoid"],
+  "about_recipients": {"name": "allergy or permanent fact about a specific recipient"}
 }
 
-Rules:
-- Only extract what the USER said, not what the agent said
-- If user said "under LKR 3000", budget_max = 3000
-- If user said "for my sister Amali", past_recipients = ["Amali"]
-- If user said "I don't like alcohol gifts", dislikes = ["alcohol"]
-- Return {} if nothing personal was found
-- Return valid JSON only, no explanation"""
+## CRITICAL RULES
+- DO NOT save budget or price limits — these are session-specific, not permanent preferences
+- DO NOT save product types being searched — "I want chocolate cake" is not a preference
+- DO NOT save delivery dates — these are always session-specific
+- DO NOT save one-time delivery addresses — only save city if user says "I usually deliver to X" or "my city is X"
+- DO SAVE allergies, medical restrictions, permanent dislikes: "my wife is allergic to peanuts"
+- DO SAVE relationship context: "my sister Amali", "my colleague John"
+- DO SAVE strong permanent preferences: "I never buy alcohol gifts", "I always prefer flowers"
+
+## Examples
+"I want chocolate cake under LKR 3000" → {} (session-specific, save nothing)
+"My wife is allergic to peanuts" → {"dislikes": ["peanuts for wife"], "about_recipients": {"wife": "allergic to peanuts"}}
+"I usually send gifts to Kandy" → {"preferred_city": "Kandy"}
+"suggest gifts for my colleague" → {} (no permanent info)
+"I prefer organic products" → {"interests": ["organic products"]}
+"my budget is 3000" → {} (session-specific)
+"I'm vegetarian" → {"dislikes": ["meat products"]}
+
+Return {} if nothing permanent was found.
+Return valid JSON only, no explanation."""
