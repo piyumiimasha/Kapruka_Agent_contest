@@ -27,7 +27,7 @@ _RULES = [
                        r"chocolate", r"vanilla", r"fruit", r"gift"]),
     (INTENT_BROWSE,   [r"browse", r"categories", r"what.*have", r"what.*sell", r"what.*offer"]),
     (INTENT_MEMORY,   [r"i prefer", r"i like", r"i love", r"i don.t like", r"i hate",
-                       r"my.*city", r"my.*budget", r"remember"]),
+                       r"my.*city", r"allergic", r"remember"]),
     (INTENT_CHITCHAT, [r"^hi$", r"^hello$", r"^hey$", r"^thanks$", r"^thank you$",
                        r"^bye$", r"^ok$", r"^okay$"]),
 ]

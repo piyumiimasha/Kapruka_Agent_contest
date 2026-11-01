@@ -128,6 +128,14 @@ def _get_user_id_from_session(session_id: str) -> str:
         return session_id[:36]
     return session_id
 
+_REFINE_RE = re.compile(
+    r"\b(budget|under|below|within|less than|up to|cheaper|cheap|other|another|"
+    r"different|something else|more options|similar|instead|suggest)\b|\b\d{3,6}\b",
+    re.I,
+)
+
+def _is_search_refinement(message: str) -> bool:
+    return bool(_REFINE_RE.search(message))
 
 async def run_orchestrator(session_id: str, user_message: str) -> dict:
     log.info(f"Orchestrator received message session={session_id}")
@@ -180,6 +188,12 @@ async def run_orchestrator(session_id: str, user_message: str) -> dict:
             "order", "track", "memory", "chitchat"
         ):
             log.warning(f"Unknown intent '{intent}', defaulting to search")
+            intent = "search"
+
+        # Mid-chat refinements ("my budget is 3000", "show me other types")
+        # should re-run the search, not get a chat-only reply.
+        if intent in ("memory", "chitchat") and history and _is_search_refinement(user_message):
+            log.info(f"Refinement override: '{intent}' -> search")
             intent = "search"
 
         intent_span.end(metadata={"intent": intent, "confident": confident})
