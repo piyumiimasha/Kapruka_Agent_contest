@@ -1,24 +1,56 @@
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+
 from db.database import get_pool, close_pool
+from graph.builder import build_graph
 from api.routes.chat import router as chat_router
 from api.routes.auth import router as auth_router
 from kapruka_mcp.mcp_client import RateLimitError, McpError
 from config.settings import settings
 from utils.logger import get_logger
-import os
 
 log = get_logger("Server")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 1. Existing asyncpg pool (profiles, episodes, logs, auth) - unchanged
     await get_pool()
-    log.info(f"Kapruka agent started | env={settings.env} | model={settings.groq_orchestrator_model}")
+
+    # 2. psycopg pool for the LangGraph checkpointer (separate driver)
+    pg_pool = AsyncConnectionPool(
+        conninfo=settings.database_url,
+        min_size=1,
+        max_size=5,
+        open=False,
+        kwargs={
+            "autocommit": True,          # required: setup() runs CREATE INDEX CONCURRENTLY
+            "prepare_threshold": None,   # required behind Supabase's transaction pooler (6543)
+            "row_factory": dict_row,     # required by the Postgres saver
+        },
+    )
+    await pg_pool.open()
+
+    checkpointer = AsyncPostgresSaver(pg_pool)
+    await checkpointer.setup()           # creates checkpoint tables on first run (idempotent)
+
+    app.state.graph = build_graph(checkpointer)
+    log.info(
+        f"Kapruka agent started | env={settings.env} | "
+        f"model={settings.groq_orchestrator_model} | graph=ready"
+    )
+
     yield
+
+    await pg_pool.close()
     await close_pool()
 
 
