@@ -10,9 +10,11 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from db.database import get_pool, close_pool
+from db.thread_repository import ensure_threads_table
 from graph.builder import build_graph
 from api.routes.chat import router as chat_router
 from api.routes.auth import router as auth_router
+from api.routes.threads import router as threads_router
 from kapruka_mcp.mcp_client import RateLimitError, McpError
 from config.settings import settings
 from utils.logger import get_logger
@@ -24,6 +26,7 @@ log = get_logger("Server")
 async def lifespan(app: FastAPI):
     # 1. Existing asyncpg pool (profiles, episodes, logs, auth) - unchanged
     await get_pool()
+    await ensure_threads_table()         # NEW: sidebar index of chats (idempotent)
 
     # 2. psycopg pool for the LangGraph checkpointer (separate driver)
     pg_pool = AsyncConnectionPool(
@@ -65,6 +68,7 @@ app.add_middleware(
 
 app.include_router(chat_router, prefix="/api/chat")
 app.include_router(auth_router, prefix="/api/auth")
+app.include_router(threads_router, prefix="/api/threads")      # NEW
 
 
 @app.get("/health")

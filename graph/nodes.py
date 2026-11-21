@@ -8,6 +8,7 @@ from langchain_core.runnables import RunnableConfig
 
 from config.settings import settings
 from graph.context import current_trace
+from graph.runs import protected
 from graph.state import AgentState
 from utils.intent_classifier import classify_intent
 from utils.logger import get_logger
@@ -67,6 +68,14 @@ def _thread_id(config: RunnableConfig) -> str:
     return config["configurable"]["thread_id"]
 
 
+def _ai(text: str, agent: str, products: list | None = None) -> AIMessage:
+    # The agent and its product cards ride on the message itself, so re-opening an old
+    # thread (or forking it) restores exactly what the user saw. additional_kwargs never
+    # reach the LLM: _history() passes role/content only.
+    return AIMessage(content=text,
+                     additional_kwargs={"agent": agent, "products": products or []})
+
+
 # ── nodes ────────────────────────────────────────────────────────────────────
 
 async def load_context(state: AgentState, config: RunnableConfig):
@@ -111,7 +120,7 @@ async def discovery(state: AgentState, config: RunnableConfig):
             state.get("memory_context", ""), lf,
         )
     return {
-        "messages": [AIMessage(content=result["reply"])],
+        "messages": [_ai(result["reply"], "discovery", result.get("products", []))],
         "products": result.get("products", []),
         "agent": "discovery",
     }
@@ -124,21 +133,22 @@ async def delivery(state: AgentState, config: RunnableConfig):
             state.get("memory_context", ""), lf,
         )
     return {
-        "messages": [AIMessage(content=reply)],
+        "messages": [_ai(reply, "delivery")],
         "products": [],
         "agent": "delivery",
     }
 
 
 async def order(state: AgentState, config: RunnableConfig):
-    with _span("agent-order", agent="order") as lf:
+    # The order agent can place a real order inside its tool loop: refuse "Stop" meanwhile.
+    with protected(_thread_id(config)), _span("agent-order", agent="order") as lf:
         reply = await run_order_agent(
             _latest_text(state), _history(state),
             state.get("memory_context", ""),
             _thread_id(config), state["user_id"], lf,
         )
     return {
-        "messages": [AIMessage(content=reply)],
+        "messages": [_ai(reply, "order")],
         "products": [],
         "agent": "order",
     }
@@ -152,7 +162,7 @@ async def chat(state: AgentState, config: RunnableConfig):
             state.get("memory_context", ""), lf,
         )
     return {
-        "messages": [AIMessage(content=reply)],
+        "messages": [_ai(reply, "orchestrator")],
         "products": [],
         "agent": "orchestrator",
     }
